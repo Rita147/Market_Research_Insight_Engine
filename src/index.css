@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Define PwC color variables */
+:root {
+  --pwc-orange: #E87722;
+  --pwc-red: #DA291C;
+  --pwc-pink: #EC5990;
+  --pwc-yellow: #F2A900;
+  --pwc-gray: #2D2A26;
+
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: var(--pwc-gray);
+  background-color: white;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Link styling */
+a {
+  font-weight: 500;
+  color: var(--pwc-orange);
+  text-decoration: inherit;
+}
+a:hover {
+  color: var(--pwc-red);
+}
+
+/* Body and headings */
+body {
+  font-family: Arial, sans-serif;
+  background-color: white;
+  color: var(--pwc-gray);
+  margin: 0;
+  padding: 0;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+/* Buttons */
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: var(--pwc-gray);
+  color: white;
+  cursor: pointer;
+  transition: border-color 0.25s, background-color 0.25s;
+}
+button:hover {
+  background-color: var(--pwc-orange);
+  border-color: var(--pwc-orange);
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Dark mode via prefers-color-scheme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f0f0f0;
+    background-color: #242424;
+  }
+  a:hover {
+    color: var(--pwc-pink);
+  }
+  button {
+    background-color: var(--pwc-orange);
+    color: var(--pwc-gray);
+  }
+  button:hover {
+    background-color: var(--pwc-red);
+    border-color: var(--pwc-red);
+    color: white;
+  }
+}
