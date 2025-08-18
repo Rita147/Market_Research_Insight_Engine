@@ -1,77 +1,223 @@
-import { useState } from "react";
-import { Search, ExternalLink, Shield, Globe, TrendingUp } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, TrendingUp, Clock, BarChart3, RefreshCw } from "lucide-react";
+import {
+  Chart,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  ScatterController,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from "chart.js";
 
-export default function PwCSearchBar() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isFocused, setIsFocused] = useState(false);
-  const [result, setResult] = useState(null);
+// Register Chart.js components
+Chart.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  ScatterController,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+export default function TrustRecencyVisualization() {
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [insights, setInsights] = useState(null);
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
+  const fetchInsights = async () => {
+    if (!query.trim()) return;
 
     setLoading(true);
     setError(null);
-    setResult(null);
 
     try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/scrape?url=${encodeURIComponent(searchQuery)}`
-      );
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setResult(data);
+      const response = await fetch('http://127.0.0.1:8000/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: query,
+          max_results: 10
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch insights');
+      
+      const data = await response.json();
+      setInsights(data);
     } catch (err) {
-      setError("Could not fetch results");
+      setError(err.message || 'Failed to fetch insights');
     } finally {
       setLoading(false);
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === "Enter") handleSearch();
+    if (e.key === "Enter") fetchInsights();
+  };
+useEffect(() => {
+  if (!insights || !insights.results || !chartRef.current) return;
+
+  // Destroy previous chart
+  if (chartInstance.current) {
+    chartInstance.current.destroy();
+  }
+
+  const ctx = chartRef.current.getContext("2d");
+
+  // Prepare scatter data
+  const scatterData = insights.results
+    .filter(item => item.recency_days != null && typeof item.trust_score === "number")
+    .map(item => ({
+      x: item.recency_days,
+      y: item.trust_score * 100, // Convert to %
+      title: item.title,
+      url: item.url,
+      prediction: item.prediction,
+      source_domain: item.source_domain
+    }));
+
+  const pointColors = scatterData.map(point =>
+    point.prediction === "REAL" ? "#10b981" : "#ef4444"
+  );
+
+  chartInstance.current = new Chart(ctx, {
+    type: "scatter",
+    data: {
+      datasets: [{
+        label: "Trust vs Recency",
+        data: scatterData,
+        backgroundColor: pointColors,
+        borderColor: pointColors,
+        borderWidth: 2,
+        pointRadius: 8,
+        pointHoverRadius: 12
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: "Trust Score vs Article Recency",
+          font: { size: 16, weight: "bold" },
+          color: "#1f2937"
+        },
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(255, 255, 255, 0.95)",
+          titleColor: "#1f2937",
+          bodyColor: "#64748b",
+          borderColor: "#e2e8f0",
+          borderWidth: 1,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: {
+            title: (ctx) => ctx[0].raw.title || "No title",
+            label: (ctx) => {
+              const p = ctx.raw;
+              return [
+                `Trust Score: ${p.y.toFixed(1)}%`,
+                `Recency: ${p.x} days ago`,
+                `Prediction: ${p.prediction}`,
+                `Domain: ${p.source_domain}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: "Days Since Publication", font: { weight: "bold" }, color: "#64748b" },
+          grid: { color: "#f1f5f9" },
+          ticks: { color: "#64748b" }
+        },
+        y: {
+          title: { display: true, text: "Trust Score (%)", font: { weight: "bold" }, color: "#64748b" },
+          min: 0,
+          max: 100,
+          grid: { color: "#f1f5f9" },
+          ticks: { color: "#64748b" }
+        }
+      },
+      onHover: (event, active) => {
+        event.native.target.style.cursor = active.length > 0 ? "pointer" : "default";
+      },
+      onClick: (event, active) => {
+        if (active.length > 0) {
+          const point = scatterData[active[0].index];
+          window.open(point.url, "_blank");
+        }
+      }
+    }
+  });
+
+  return () => {
+    if (chartInstance.current) chartInstance.current.destroy();
+  };
+}, [insights]);
+
+
+  const getStatsFromResults = () => {
+    if (!insights || !insights.results) return null;
+
+    const results = insights.results;
+    const totalArticles = results.length;
+    const realArticles = results.filter(r => r.prediction === 'REAL').length;
+    const avgTrustScore = results.reduce((sum, r) => sum + (r.trust_score || 0), 0) / totalArticles;
+    const avgRecency = results
+      .filter(r => r.recency_days !== null)
+      .reduce((sum, r) => sum + r.recency_days, 0) / 
+      results.filter(r => r.recency_days !== null).length;
+
+    return {
+      totalArticles,
+      realArticles,
+      avgTrustScore,
+      avgRecency: avgRecency || 0
+    };
   };
 
-  const getTrustScoreColor = (score) => {
-    if (score >= 0.8) return "#10b981";
-    if (score >= 0.6) return "#f59e0b";
-    return "#ef4444";
-  };
-
-  const getTrustScoreLabel = (score) => {
-    if (score >= 0.8) return "High Trust";
-    if (score >= 0.6) return "Medium Trust";
-    return "Low Trust";
-  };
+  const stats = getStatsFromResults();
 
   return (
     <div style={{
       minHeight: "100vh",
       background: "linear-gradient(135deg, #f8fafc 0%, #dbeafe 50%, #e0e7ff 100%)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
       padding: "1.5rem",
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-      <div style={{ width: "100%", maxWidth: "56rem" }}>
+      <div style={{ maxWidth: "80rem", margin: "0 auto" }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
           <h1 style={{ 
             fontSize: "2.5rem", 
             fontWeight: "bold", 
             color: "#1f2937", 
-            marginBottom: "0.5rem" 
+            marginBottom: "0.5rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.75rem"
           }}>
-            <span style={{ color: "#ea580c" }}>PwC</span> Trust Analyzer
+            <BarChart3 color="#ea580c" size={40} />
+            <span><span style={{ color: "#ea580c" }}>PwC</span> Trust Analytics</span>
           </h1>
           <p style={{ color: "#64748b", fontSize: "1.125rem" }}>
-            Analyze website credibility and trust scores
+            Visualize trust scores vs article recency patterns
           </p>
         </div>
 
-        {/* Main Card */}
+        {/* Search Section */}
         <div style={{
           backgroundColor: "rgba(255, 255, 255, 0.9)",
           backdropFilter: "blur(10px)",
@@ -79,374 +225,251 @@ export default function PwCSearchBar() {
           boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
           border: "1px solid rgba(255, 255, 255, 0.2)",
           padding: "2rem",
-          marginBottom: "1.5rem"
+          marginBottom: "2rem"
         }}>
-          {/* Search Input */}
-          <div style={{ 
-            marginBottom: "1.5rem",
-            transform: isFocused ? "scale(1.02)" : "scale(1)",
-            transition: "transform 0.3s ease"
-          }}>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              backgroundColor: "white",
-              borderRadius: "0.75rem",
-              border: `2px solid ${isFocused ? "#ea580c" : "#e2e8f0"}`,
-              boxShadow: isFocused ? "0 10px 25px -5px rgba(234, 88, 12, 0.2)" : "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
-              transition: "all 0.3s ease"
-            }}>
-              <div style={{ paddingLeft: "1rem" }}>
-                <Search 
-                  size={20} 
-                  color={isFocused ? "#ea580c" : "#94a3b8"}
-                />
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                onKeyPress={handleKeyPress}
-                placeholder="Enter a URL to analyze..."
-                style={{
-                  flex: 1,
-                  padding: "1rem",
-                  fontSize: "1.125rem",
-                  backgroundColor: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "#1f2937",
-                }}
-              />
-              <button
-                onClick={handleSearch}
-                disabled={!searchQuery.trim() || loading}
-                style={{
-                  margin: "0.5rem",
-                  padding: "0.75rem 1.5rem",
-                  borderRadius: "0.5rem",
-                  fontWeight: "600",
-                  border: "none",
-                  cursor: !searchQuery.trim() || loading ? "not-allowed" : "pointer",
-                  backgroundColor: !searchQuery.trim() || loading ? "#f1f5f9" : "#ea580c",
-                  color: !searchQuery.trim() || loading ? "#94a3b8" : "white",
-                  boxShadow: !searchQuery.trim() || loading ? "none" : "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
-                  transform: !searchQuery.trim() || loading ? "none" : "scale(1)",
-                  transition: "all 0.3s ease"
-                }}
-                onMouseEnter={(e) => {
-                  if (!e.target.disabled) {
-                    e.target.style.backgroundColor = "#dc2626";
-                    e.target.style.transform = "scale(1.05)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!e.target.disabled) {
-                    e.target.style.backgroundColor = "#ea580c";
-                    e.target.style.transform = "scale(1)";
-                  }
-                }}
-              >
-                {loading ? 'Analyzing...' : 'Analyze'}
-              </button>
-            </div>
-          </div>
-
-          {/* Loading State */}
-          {loading && (
-            <div style={{ textAlign: "center", padding: "2rem 0" }}>
-              <div style={{ 
-                display: "inline-flex", 
-                alignItems: "center", 
-                gap: "0.75rem" 
-              }}>
-                <div style={{
-                  width: "1.5rem",
-                  height: "1.5rem",
-                  border: "2px solid #f3f4f6",
-                  borderTop: "2px solid #ea580c",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite"
-                }}></div>
-                <span style={{ color: "#64748b", fontWeight: "500" }}>
-                  Analyzing website...
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && (
-            <div style={{
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "0.75rem",
-              padding: "1rem",
-              marginBottom: "1.5rem"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <div style={{ 
-                  width: "0.5rem", 
-                  height: "0.5rem", 
-                  backgroundColor: "#ef4444", 
-                  borderRadius: "50%" 
-                }}></div>
-                <span style={{ color: "#b91c1c", fontWeight: "500" }}>{error}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Results */}
-          {result && (
-            <div style={{ 
-              opacity: 0,
-              animation: "fadeIn 0.5s ease forwards"
-            }}>
-              {/* Trust Score Header */}
-              <div style={{
-                background: "linear-gradient(135deg, #f8fafc 0%, #dbeafe 100%)",
-                borderRadius: "0.75rem",
-                padding: "1.5rem",
-                border: "1px solid #e2e8f0",
-                marginBottom: "1.5rem"
-              }}>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: "1rem",
-                  flexWrap: "wrap",
-                  gap: "1rem"
-                }}>
-                  <h2 style={{
-                    fontSize: "1.5rem",
-                    fontWeight: "bold",
-                    color: "#1f2937",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem"
-                  }}>
-                    <Shield color="#ea580c" size={28} />
-                    <span>Trust Analysis</span>
-                  </h2>
-                  <div style={{
-                    padding: "0.5rem 1rem",
-                    borderRadius: "9999px",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    color: "white",
-                    backgroundColor: getTrustScoreColor(result.trust_score)
-                  }}>
-                    {getTrustScoreLabel(result.trust_score)}
-                  </div>
-                </div>
-                
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                  gap: "1.5rem"
-                }}>
-                  <div>
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "0.5rem"
-                    }}>
-                      <span style={{ color: "#64748b", fontWeight: "500" }}>Trust Score</span>
-                      <span style={{
-                        fontSize: "1.5rem",
-                        fontWeight: "bold",
-                        color: getTrustScoreColor(result.trust_score)
-                      }}>
-                        {(result.trust_score * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{
-                      width: "100%",
-                      backgroundColor: "#e2e8f0",
-                      borderRadius: "9999px",
-                      height: "0.75rem"
-                    }}>
-                      <div style={{
-                        height: "0.75rem",
-                        borderRadius: "9999px",
-                        width: `${result.trust_score * 100}%`,
-                        backgroundColor: getTrustScoreColor(result.trust_score),
-                        transition: "width 1s ease-out"
-                      }}></div>
-                    </div>
-                  </div>
-                  
-                  <div style={{
-                    backgroundColor: "white",
-                    borderRadius: "0.5rem",
-                    padding: "1rem",
-                    border: "1px solid #e2e8f0"
-                  }}>
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      marginBottom: "0.5rem"
-                    }}>
-                      <TrendingUp size={16} color="#64748b" />
-                      <span style={{ color: "#64748b", fontWeight: "500", fontSize: "0.875rem" }}>
-                        Prediction
-                      </span>
-                    </div>
-                    <p style={{ fontSize: "1.125rem", fontWeight: "600", color: "#1f2937" }}>
-                      {result.prediction}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Website Details */}
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                gap: "1.5rem"
-              }}>
-                <div style={{
-                  backgroundColor: "white",
-                  borderRadius: "0.75rem",
-                  padding: "1.5rem",
-                  border: "1px solid #e2e8f0",
-                  boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)"
-                }}>
-                  <h3 style={{
-                    fontSize: "1.125rem",
-                    fontWeight: "600",
-                    color: "#1f2937",
-                    marginBottom: "1rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem"
-                  }}>
-                    <Globe size={20} color="#ea580c" />
-                    <span>Website Information</span>
-                  </h3>
-                  
-                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    <div>
-                      <label style={{
-                        fontSize: "0.75rem",
-                        fontWeight: "500",
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em"
-                      }}>
-                        Title
-                      </label>
-                      <p style={{
-                        color: "#1f2937",
-                        fontWeight: "500",
-                        marginTop: "0.25rem",
-                        lineHeight: "1.6"
-                      }}>
-                        {result.title || "No title found"}
-                      </p>
-                    </div>
-                    
-                    <div>
-                      <label style={{
-                        fontSize: "0.75rem",
-                        fontWeight: "500",
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em"
-                      }}>
-                        Source Domain
-                      </label>
-                      <p style={{
-                        color: "#1f2937",
-                        fontWeight: "500",
-                        marginTop: "0.25rem"
-                      }}>
-                        {result.source_domain}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{
-                  backgroundColor: "white",
-                  borderRadius: "0.75rem",
-                  padding: "1.5rem",
-                  border: "1px solid #e2e8f0",
-                  boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)"
-                }}>
-                  <h3 style={{
-                    fontSize: "1.125rem",
-                    fontWeight: "600",
-                    color: "#1f2937",
-                    marginBottom: "1rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem"
-                  }}>
-                    <ExternalLink size={20} color="#ea580c" />
-                    <span>Source URL</span>
-                  </h3>
-                  
-                  <div style={{
-                    backgroundColor: "#f8fafc",
-                    borderRadius: "0.5rem",
-                    padding: "1rem",
-                    border: "1px solid #e2e8f0"
-                  }}>
-                    <a 
-                      href={result.news_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{
-                        color: "#ea580c",
-                        fontWeight: "500",
-                        wordBreak: "break-all",
-                        textDecoration: "none",
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: "0.5rem"
-                      }}
-                      onMouseEnter={(e) => e.target.style.color = "#dc2626"}
-                      onMouseLeave={(e) => e.target.style.color = "#ea580c"}
-                    >
-                      <span style={{ flex: 1 }}>{result.news_url}</span>
-                      <ExternalLink size={16} style={{ marginTop: "0.125rem", flexShrink: 0 }} />
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ textAlign: "center" }}>
-          <p style={{
-            color: "#64748b",
+          <div style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            backgroundColor: "white",
+            borderRadius: "0.75rem",
+            border: "2px solid #e2e8f0",
+            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)"
+          }}>
+            <div style={{ paddingLeft: "1rem" }}>
+              <Search size={20} color="#94a3b8" />
+            </div>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Enter search query to analyze trust patterns..."
+              style={{
+                flex: 1,
+                padding: "1rem",
+                fontSize: "1.125rem",
+                backgroundColor: "transparent",
+                border: "none",
+                outline: "none",
+                color: "#1f2937",
+              }}
+            />
+            <button
+              onClick={fetchInsights}
+              disabled={!query.trim() || loading}
+              style={{
+                margin: "0.5rem",
+                padding: "0.75rem 1.5rem",
+                borderRadius: "0.5rem",
+                fontWeight: "600",
+                border: "none",
+                cursor: !query.trim() || loading ? "not-allowed" : "pointer",
+                backgroundColor: !query.trim() || loading ? "#f1f5f9" : "#ea580c",
+                color: !query.trim() || loading ? "#94a3b8" : "white",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                transition: "all 0.3s ease"
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = "#dc2626";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = "#ea580c";
+                }
+              }}
+            >
+              {loading ? <RefreshCw size={16} className="animate-spin" /> : <TrendingUp size={16} />}
+              {loading ? 'Analyzing...' : 'Analyze'}
+            </button>
+          </div>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div style={{
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "0.75rem",
+            padding: "1rem",
+            marginBottom: "2rem",
+            display: "flex",
+            alignItems: "center",
             gap: "0.5rem"
           }}>
-            <span>Powered by</span>
-            <span style={{ fontWeight: "600", color: "#ea580c" }}>PwC Technology</span>
-          </p>
-        </div>
+            <div style={{ 
+              width: "0.5rem", 
+              height: "0.5rem", 
+              backgroundColor: "#ef4444", 
+              borderRadius: "50%" 
+            }}></div>
+            <span style={{ color: "#b91c1c", fontWeight: "500" }}>{error}</span>
+          </div>
+        )}
+
+        {/* Stats Cards */}
+        {stats && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: "1rem",
+            marginBottom: "2rem"
+          }}>
+            <div style={{
+              backgroundColor: "white",
+              padding: "1.5rem",
+              borderRadius: "0.75rem",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
+              border: "1px solid #e2e8f0"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <BarChart3 size={16} color="#64748b" />
+                <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Total Articles</span>
+              </div>
+              <p style={{ fontSize: "2rem", fontWeight: "bold", color: "#1f2937" }}>
+                {stats.totalArticles}
+              </p>
+            </div>
+
+            <div style={{
+              backgroundColor: "white",
+              padding: "1.5rem",
+              borderRadius: "0.75rem",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
+              border: "1px solid #e2e8f0"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <TrendingUp size={16} color="#64748b" />
+                <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Avg Trust Score</span>
+              </div>
+              <p style={{ fontSize: "2rem", fontWeight: "bold", color: "#10b981" }}>
+                {(stats.avgTrustScore * 100).toFixed(1)}%
+              </p>
+            </div>
+
+            <div style={{
+              backgroundColor: "white",
+              padding: "1.5rem",
+              borderRadius: "0.75rem",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
+              border: "1px solid #e2e8f0"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <Clock size={16} color="#64748b" />
+                <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Avg Recency</span>
+              </div>
+              <p style={{ fontSize: "2rem", fontWeight: "bold", color: "#ea580c" }}>
+                {Math.round(stats.avgRecency)}d
+              </p>
+            </div>
+
+            <div style={{
+              backgroundColor: "white",
+              padding: "1.5rem",
+              borderRadius: "0.75rem",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1)",
+              border: "1px solid #e2e8f0"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <TrendingUp size={16} color="#64748b" />
+                <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Real Articles</span>
+              </div>
+              <p style={{ fontSize: "2rem", fontWeight: "bold", color: "#10b981" }}>
+                {stats.realArticles}/{stats.totalArticles}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Chart Section */}
+        {insights && (
+          <div style={{
+            backgroundColor: "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(10px)",
+            borderRadius: "1rem",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            padding: "2rem"
+          }}>
+            <div style={{ marginBottom: "1rem" }}>
+              <h2 style={{ 
+                fontSize: "1.5rem", 
+                fontWeight: "bold", 
+                color: "#1f2937",
+                marginBottom: "0.5rem"
+              }}>
+                Trust Score vs Recency Analysis
+              </h2>
+              <p style={{ color: "#64748b" }}>
+                Each point represents an article. Click on points to visit the source.
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "1rem", marginLeft: "1rem" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <div style={{ width: "0.75rem", height: "0.75rem", backgroundColor: "#10b981", borderRadius: "50%" }}></div>
+                    Real
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <div style={{ width: "0.75rem", height: "0.75rem", backgroundColor: "#ef4444", borderRadius: "50%" }}></div>
+                    Fake
+                  </span>
+                </span>
+              </p>
+            </div>
+            
+            <div style={{ 
+              height: "500px", 
+              width: "100%",
+              position: "relative"
+            }}>
+              <canvas 
+                ref={chartRef}
+                style={{ 
+                  maxHeight: "100%",
+                  maxWidth: "100%"
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div style={{
+            backgroundColor: "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(10px)",
+            borderRadius: "1rem",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            padding: "4rem",
+            textAlign: "center"
+          }}>
+            <div style={{ 
+              display: "inline-flex", 
+              alignItems: "center", 
+              gap: "0.75rem" 
+            }}>
+              <div style={{
+                width: "1.5rem",
+                height: "1.5rem",
+                border: "2px solid #f3f4f6",
+                borderTop: "2px solid #ea580c",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite"
+              }}></div>
+              <span style={{ color: "#64748b", fontWeight: "500", fontSize: "1.125rem" }}>
+                Fetching insights and building visualization...
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>
