@@ -3,9 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import joblib
 from backend.scraper import scrape_url
 import random
-from pydantic import BaseModel, EmailStr
+# from pydantic import BaseModel, EmailStr
 import aiosmtplib
-from email.message import EmailMessage
+# from email.message import EmailMessage
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
 import requests
@@ -336,44 +336,44 @@ def scrape(url: str = Query(...)):
 def health_check():
     return {"status":"healthy","models_loaded":model is not None and vectorizer is not None,"sklearn_available":SKLEARN_AVAILABLE}
 
-# -------------------------------
-# Email verification
-# -------------------------------
-verification_codes = {}
+# # -------------------------------
+# # Email verification
+# # -------------------------------
+# verification_codes = {}
 
-class EmailRequest(BaseModel):
-    email: EmailStr
+# class EmailRequest(BaseModel):
+#     email: EmailStr
 
-class VerifyRequest(BaseModel):
-    email: EmailStr
-    code: str
+# class VerifyRequest(BaseModel):
+#     email: EmailStr
+#     code: str
 
-@app.post("/send-code")
-async def send_code(req: EmailRequest):
-    if not req.email.endswith("@pwc.com"):
-        raise HTTPException(status_code=400, detail="Email must be @pwc.com")
-    code = str(random.randint(100000, 999999))
-    verification_codes[req.email] = code
-    try:
-        message = EmailMessage()
-        message["From"] = "rita.aldeek.147@gmail.com"
-        message["To"] = req.email
-        message["Subject"] = "Your PwC Verification Code"
-        message.set_content(f"Your verification code is: {code}")
-        await aiosmtplib.send(message, hostname="smtp.gmail.com", port=587, start_tls=True,
-                              username="rita.aldeek.147@gmail.com", password="dtlb kuxu rvad peqn")
-        return {"message":"Code sent successfully"}
-    except Exception as e:
-        logger.error(f"Email sending failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send email")
+# @app.post("/send-code")
+# async def send_code(req: EmailRequest):
+#     if not req.email.endswith("@pwc.com"):
+#         raise HTTPException(status_code=400, detail="Email must be @pwc.com")
+#     code = str(random.randint(100000, 999999))
+#     verification_codes[req.email] = code
+#     try:
+#         message = EmailMessage()
+#         message["From"] = "rita.aldeek.147@gmail.com"
+#         message["To"] = req.email
+#         message["Subject"] = "Your PwC Verification Code"
+#         message.set_content(f"Your verification code is: {code}")
+#         await aiosmtplib.send(message, hostname="smtp.gmail.com", port=587, start_tls=True,
+#                               username="rita.aldeek.147@gmail.com", password="dtlb kuxu rvad peqn")
+#         return {"message":"Code sent successfully"}
+#     except Exception as e:
+#         logger.error(f"Email sending failed: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to send email")
 
-@app.post("/verify-code")
-def verify_code(req: VerifyRequest):
-    if verification_codes.get(req.email) == req.code:
-        del verification_codes[req.email]
-        return {"verified": True}
-    else:
-        raise HTTPException(status_code=400, detail="Invalid code")
+# @app.post("/verify-code")
+# def verify_code(req: VerifyRequest):
+#     if verification_codes.get(req.email) == req.code:
+#         del verification_codes[req.email]
+#         return {"verified": True}
+#     else:
+#         raise HTTPException(status_code=400, detail="Invalid code")
 
 if __name__ == "__main__":
     import uvicorn
