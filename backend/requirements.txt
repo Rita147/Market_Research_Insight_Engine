@@ -3,3 +3,9 @@ uvicorn
 httpx
 beautifulsoup4
 lxml
+joblib
+pydantic
+aiosmtplib
+requests
+numpy
+openai
