@@ -250,31 +250,65 @@ def query_prompt(req: QueryRequest):
             logger.warning(f"Clustering failed: {e}")
 
     # 3) OpenAI final answer
-    items_sorted = sorted(items, key=lambda x:x["trust_score"], reverse=True)
+    items_sorted = sorted(items, key=lambda x: x["trust_score"], reverse=True)
     top_sources = items_sorted[:3]
     combined_text = "\n\n".join([f"{item['title']}: {item['snippet']}" for item in top_sources])
+
     try:
         from openai import OpenAI
         client = OpenAI()  # will pick up the key from environment
 
-
+        # --- Simple Answer (keeps your original style) ---
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role":"system","content":"You are a helpful assistant."},
-                {"role":"user","content":"Question: What is 2+2?"}
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Question: {req.prompt}\n\nSources:\n{combined_text}"}
             ],
             max_tokens=200,
             temperature=0.2
         )
-
         final_answer = response.choices[0].message.content
+
+        # --- Research Report (new addition) ---
+        report_prompt = f"""
+        You are an AI research assistant. The user asked: "{req.prompt}"
+
+        Based on the following sources, write a structured mini research report with:
+        1. Executive Summary (2–3 sentences).
+        2. Key Findings (bullet points).
+        3. Credibility Assessment (REAL vs FAKE + trust scores).
+        4. Recent Developments (recency in days).
+        5. Conclusion.
+
+        Sources:
+        {combined_text}
+        """
+
+        report_resp = client.chat.completions.create(
+            model="gpt-4o-mini",   # better for summarization
+            messages=[
+                {"role": "system", "content": "You are a helpful research analyst."},
+                {"role": "user", "content": report_prompt}
+            ],
+            max_tokens=700,
+            temperature=0.3
+        )
+        final_report = report_resp.choices[0].message.content
 
     except Exception as e:
         logger.error(f"OpenAI request failed: {e}")
         final_answer = None
+        final_report = None
 
-    return {"prompt": req.prompt, "results": items_sorted, "answer": final_answer}
+    return {
+        "prompt": req.prompt,
+        "results": items_sorted,
+        "answer": final_answer,
+        "report": final_report  # <-- new field
+    }
+
+
 
 # -------------------------------
 # /scrape endpoint

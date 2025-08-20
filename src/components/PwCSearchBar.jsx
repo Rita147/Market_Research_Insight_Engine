@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Search, TrendingUp, Clock, BarChart3, RefreshCw } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import {
   Chart,
   CategoryScale,
@@ -28,6 +29,7 @@ export default function TrustRecencyVisualization() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [insights, setInsights] = useState(null);
+  const [report, setReport] = useState("");
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
 
@@ -53,6 +55,9 @@ export default function TrustRecencyVisualization() {
       
       const data = await response.json();
       setInsights(data);
+      setReport(data.report || ""); 
+      console.log("Insights data:", data);
+
     } catch (err) {
       setError(err.message || 'Failed to fetch insights');
     } finally {
@@ -473,41 +478,33 @@ useEffect(() => {
           </div>
         )}
       </div>
-      {/* Top Trusted Result */}
-        {topResult && (
-          <div style={{
-            backgroundColor: "#fef3c7",
-            borderRadius: "0.75rem",
-            border: "1px solid #fcd34d",
-            padding: "1.5rem",
-            marginBottom: "2rem"
-          }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#b45309", marginBottom: "0.5rem" }}>
-              Most Trusted Article
-            </h2>
-            <a href={topResult.url} target="_blank" rel="noopener noreferrer" style={{
-              fontWeight: "bold",
-              color: "#92400e",
-              fontSize: "1rem",
-              textDecoration: "none",
-              marginBottom: "0.5rem",
-              display: "block"
-            }}>
-              {topResult.title || "No Title"}
-            </a>
-            <p style={{ color: "#78350f", fontSize: "1rem", marginBottom: "0.5rem" }}>
-              {topResult.snippet || "No snippet available"}
-            </p>
-            <div style={{ display: "flex", gap: "1rem", fontSize: "0.875rem", color: "#78350f" }}>
-              <span>Trust Score: {(topResult.trust_score*100).toFixed(1)}%</span>
-              <span>Prediction: <strong style={{ color: topResult.prediction === "REAL" ? "#10b981" : "#ef4444" }}>
-                {topResult.prediction}</strong>
-              </span>
-              <span>Source: {topResult.source_domain}</span>
-            </div>
-          </div>
-        )}
 
+      {/* AI Summary Section */}
+      {report && (
+        <div style={{
+          marginTop: "2rem",
+          backgroundColor: "white",
+          padding: "1.5rem",
+          borderRadius: "0.75rem",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          border: "1px solid #e2e8f0"
+        }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#1f2937", marginBottom: "0.5rem" }}>
+            AI Summary
+          </h2>
+          <ReactMarkdown
+            children={report}
+            components={{
+              h1: ({node, ...props}) => <h1 style={{fontSize:"1.5rem", fontWeight:"bold", color:"#1f2937"}} {...props}/>,
+              h2: ({node, ...props}) => <h2 style={{fontSize:"1.25rem", fontWeight:"bold", color:"#1f2937"}} {...props}/>,
+              h3: ({node, ...props}) => <h3 style={{fontSize:"1.125rem", fontWeight:"bold", color:"#1f2937"}} {...props}/>,
+              p: ({node, ...props}) => <p style={{color:"#374151", lineHeight:"1.5"}} {...props}/>,
+              li: ({node, ...props}) => <li style={{marginLeft:"1.25rem", marginTop:"0.25rem"}} {...props}/>,
+              strong: ({node, ...props}) => <strong style={{fontWeight:"bold"}} {...props}/>
+            }}
+          />
+        </div>
+      )}
       {/* Results Section */}
       {insights && insights.results && insights.results.length > 0 && (
         <div style={{ marginTop: "2rem" }}>
