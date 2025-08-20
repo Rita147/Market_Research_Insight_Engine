@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import joblib
-from scraper import scrape_url  # your existing scraper module
+from backend.scraper import scrape_url
 import random
 from pydantic import BaseModel, EmailStr
 import aiosmtplib
