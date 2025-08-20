@@ -4,8 +4,9 @@ httpx
 beautifulsoup4
 lxml
 joblib
-pydantic
-aiosmtplib
-requests
 numpy
+scikit-learn
+aiosmtplib
+pydantic
 openai
+requests
