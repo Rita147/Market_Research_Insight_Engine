@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import joblib
 from backend.scraper import scrape_url
 import random
-# from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr
 import aiosmtplib
 # from email.message import EmailMessage
 import os
